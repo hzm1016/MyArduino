@@ -14,7 +14,6 @@ const int FALSE = 0;
 const int TRUE = 1;
 int led = 13;
 int ledState = 0;
-int justGot = 0;
 
 #define CMD_BUFF_LEN 128
 char cmdBuff[CMD_BUFF_LEN];
@@ -92,12 +91,11 @@ bool dispatchCmd()
 void loop() // run over and over
 {
   if (collectCmd()) {
-    Serial.println(cmdBuff);
-    delay(200);               // wait for a moment
+    Serial.print(cmdBuff);
     if (dispatchCmd()) {
-      Serial.println("*** ERROR: Bad cmd\n");
+      Serial.println(":\t*** ERROR: Bad cmd");
     } else {
-      Serial.println("OK\n");
+      Serial.println(":\tOK");
     }
     cmdIndex = 0;
   }
