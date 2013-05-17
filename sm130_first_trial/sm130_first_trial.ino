@@ -63,38 +63,22 @@ const byte nonzero = 1;
   1 byte - checksum - sum of everything but the header
 */
 
-//INIT
-void setup()  
+void showReply(int len, const byte* response)
 {
-  delay(200);
+  int i;
 
-  pinMode(led, OUTPUT);     
-  pinMode(rfidReset, OUTPUT);     
-
-  delay(500);
-  digitalWrite(led, LOW);    // turn the LED off by making the voltage LOW
-  Serial.begin(9600);
-  delay(500);
-  digitalWrite(led, HIGH);   // turn the LED on (HIGH is the voltage level)
-  
-  // set the data rate for the NewSoftSerial port
-
-  rfid.begin(19200);
-
-  digitalWrite(rfidReset, HIGH);
-  delay(50);
-  digitalWrite(rfidReset, LOW);
-  delay(1000);
-  digitalWrite(led, LOW);
-  delay(500);
-  digitalWrite(led, HIGH);
-  delay(500);
-  digitalWrite(led, LOW);
-  delay(1000);
-  digitalWrite(led, HIGH);
-  delay(1000);
-  digitalWrite(led, LOW);
-  Serial.println("Start");
+  Serial.print("Cmd response is ");
+  if (len < 10) Serial.print(' ');
+  Serial.print(len);
+  Serial.print(" bytes: ");
+  if (len < 0) len = -len;
+  for (i=0; i<len; i++) {
+    if ((len-1) == i) Serial.print(" * "); // Checksum
+      else Serial.print(' ');
+    if (16 > response[i]) Serial.print(0, HEX);
+    Serial.print(response[i], HEX);
+  }
+  Serial.println();
 }
 
 //  writeCmd -- write a command, including the header prefix and the checksum
@@ -124,7 +108,7 @@ void blinky(int mask)
   digitalWrite(led, ((count & mask)?LOW:HIGH));
 }
 
-int readReply(char* buf)
+int readReply(byte* buf)
 {
   int count;
   int i;
@@ -132,6 +116,8 @@ int readReply(char* buf)
   byte input;
   byte inSum;
   byte recSum = 0;
+  
+  for (i=0; i<32; i++) buf[i] = 0x42;
   
   while (!rfid.available()) blinky(7<<12);
   buf[0] = input = rfid.read();
@@ -157,50 +143,49 @@ int readReply(char* buf)
   return len;
 }
 
+
+//INIT
+void setup()  
+{
+  byte response[32];
+  int len;
+
+  delay(200);
+
+  pinMode(led, OUTPUT);     
+  pinMode(rfidReset, OUTPUT);     
+
+  Serial.begin(9600);
+  
+  // set the data rate for the NewSoftSerial port
+  rfid.begin(19200);
+
+  digitalWrite(rfidReset, HIGH);
+  delay(50);
+  digitalWrite(rfidReset, LOW);
+  delay(50);
+  Serial.println("Start");
+  writeCmd(0, CMD_Firmware);
+  len = readReply(response);
+  showReply(len, response);
+
+  writeCmd(1, CMD_Antenna_Power, &nonzero);
+  len = readReply(response);
+  showReply(len, response);
+  writeCmd(0, CMD_Seek_for_Tag);
+  len = readReply(response);
+  showReply(len, response);
+}
+
 void loop()
 {
   int len;
   int i;
   byte response[32];
-  static int loopNum = 0;
 
-  for (i=0; i<32; i++) response[i] = 0x42;
-
-  while (!Serial.available()) ;
-  Serial.read();
-
-  switch (loopNum) {
-  case 0:
-    writeCmd(0, CMD_Firmware);
-    break;
-  case 1:
-    writeCmd(1, CMD_Antenna_Power, &nonzero);
-    break;
-  case 2:
-    writeCmd(1, CMD_Antenna_Power, &zero);
-    break;
-  case 3:
-    writeCmd(1, CMD_Antenna_Power, &nonzero);
-    break;
-  case 4:
-    writeCmd(0, CMD_Seek_for_Tag);
-    break;
-  case 5: // waiting for tag to be detected
-    break;
-  default:
-    break;
-  }
-  loopNum++;
-  len = readReply((char*)response);
-
-  Serial.print("Cmd response is ");
-  Serial.print(len);
-  Serial.print(" bytes: ");
-  if (len < 0) len = -len;
-  for (i=0; i<(len+2); i++) {
-    Serial.print(' ');
-    if (16 > response[i]) Serial.print(0, HEX);
-    Serial.print(response[i], HEX);
-  }
-  Serial.println();
+  writeCmd(0, CMD_Seek_for_Tag);
+  len = readReply(response);
+  showReply(len, response);
+  len = readReply(response);
+  showReply(len, response);
 }
