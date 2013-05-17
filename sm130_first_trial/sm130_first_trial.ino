@@ -46,6 +46,64 @@ const int led = 13;
 const byte zero = 0;
 const byte nonzero = 1;
 
+class UsbInput {
+public:
+  UsbInput(void);
+  virtual ~UsbInput(void);
+
+  virtual int poll(void);   // Returns !=0 when complete response ready.  <0 => error, >0 is length
+  virtual byte* data(void); // Returns pointer to buffer
+  virtual void reset(void); // Resets buffer state
+
+private:
+  // static const int USB_BUF_LEN = 128;
+  static const int USB_BUF_LEN = 8;
+  int m_index;
+  byte m_buf[USB_BUF_LEN];
+};
+
+UsbInput::UsbInput()
+{
+  reset();
+}
+
+UsbInput::~UsbInput()
+{
+}
+
+int UsbInput::poll()
+{
+  int ret = 0;
+  int i;
+  byte data;
+
+  if (Serial.available()) {
+    data = Serial.read();
+    m_buf[m_index++] = data;
+    if (USB_BUF_LEN == m_index) ret = -m_index;
+    if (('\n' == data) || ('\r' == data)) {
+      ret = m_index;
+    }
+    if (ret) {
+      m_buf[m_index-1] = 0;
+      reset();
+    }
+  }
+  return ret;
+}
+
+byte* UsbInput::data()
+{
+  return m_buf;
+}
+
+void UsbInput::reset()
+{
+  m_index = 0;
+}
+
+UsbInput cmdPort;
+
 
 class RfidResponse {
 public:
@@ -57,10 +115,11 @@ public:
   virtual void reset(void); // Resets buffer state
 
 private:
+  static const int RFID_BUF_LEN = 32;
   SoftwareSerial* m_port;
   int m_index;
   int m_count;
-  byte m_buf[32];
+  byte m_buf[RFID_BUF_LEN];
 };
 
 RfidResponse::RfidResponse(SoftwareSerial* port)
@@ -85,7 +144,7 @@ int RfidResponse::poll()
     if ((0 == m_index) && (RFID_CMD_Header0 != data)) ret = -1;
     if ((1 == m_index) && (RFID_CMD_Header1 != data)) ret = -2;
     if (2 == m_index) {
-      if (data > 27) ret = -3;
+      if (data > (RFID_BUF_LEN-5)) ret = -3;
         else m_count = data;
     }
     if (ret < 0) {
@@ -209,8 +268,8 @@ void loop()
   int len;
   int i;
 
-  if (Serial.available()) {
-    Serial.read();
+  if (len = cmdPort.poll()) {
+    showReply(len, cmdPort.data());
     writeCmd(0, RFID_CMD_Seek_for_Tag);
   }
   if (len = response.poll()) {
