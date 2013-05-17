@@ -11,39 +11,109 @@
 */
 #include <SoftwareSerial.h>
 
-SoftwareSerial rfid(7, 8);
-
-typedef unsigned char byte;
-#define CMD_Header0             ((byte)0xff)
-#define CMD_Header1             ((byte)0x00)
-#define CMD_Reset               ((byte)0x80)
-#define CMD_Firmware            ((byte)0x81)
-#define CMD_Seek_for_Tag        ((byte)0x82)
-#define CMD_Select_Tag          ((byte)0x83)
-#define CMD_Authenticate        ((byte)0x85)
-#define CMD_Read_Block          ((byte)0x86)
-#define CMD_Read_Value          ((byte)0x87)
-#define CMD_Write_Block         ((byte)0x89)
-#define CMD_Write_Value         ((byte)0x8A)
-#define CMD_Write_4_Byte_Block  ((byte)0x8B)
-#define CMD_Write_Key           ((byte)0x8C)
-#define CMD_Increment           ((byte)0x8D)
-#define CMD_Decrement           ((byte)0x8E)
-#define CMD_Antenna_Power       ((byte)0x90)
-#define CMD_Read_port           ((byte)0x91)
-#define CMD_Write_Port          ((byte)0x92)
-#define CMD_Halt                ((byte)0x93)
-#define CMD_Set_Baud_Rate       ((byte)0x94)
-#define CMD_Sleep               ((byte)0x96)
-
 const int FALSE = 0;
 const int  TRUE = 1;
 
+const int RFID0_RX = 7;
+const int RFID0_TX = 8;
+const int RFIDRESET = 4;
+SoftwareSerial rfid0(RFID0_RX, RFID0_TX);
+
+#define RFID_CMD_Header0             ((byte)0xff)
+#define RFID_CMD_Header1             ((byte)0x00)
+#define RFID_CMD_Reset               ((byte)0x80)
+#define RFID_CMD_Firmware            ((byte)0x81)
+#define RFID_CMD_Seek_for_Tag        ((byte)0x82)
+#define RFID_CMD_Select_Tag          ((byte)0x83)
+#define RFID_CMD_Authenticate        ((byte)0x85)
+#define RFID_CMD_Read_Block          ((byte)0x86)
+#define RFID_CMD_Read_Value          ((byte)0x87)
+#define RFID_CMD_Write_Block         ((byte)0x89)
+#define RFID_CMD_Write_Value         ((byte)0x8A)
+#define RFID_CMD_Write_4_Byte_Block  ((byte)0x8B)
+#define RFID_CMD_Write_Key           ((byte)0x8C)
+#define RFID_CMD_Increment           ((byte)0x8D)
+#define RFID_CMD_Decrement           ((byte)0x8E)
+#define RFID_CMD_Antenna_Power       ((byte)0x90)
+#define RFID_CMD_Read_port           ((byte)0x91)
+#define RFID_CMD_Write_Port          ((byte)0x92)
+#define RFID_CMD_Halt                ((byte)0x93)
+#define RFID_CMD_Set_Baud_Rate       ((byte)0x94)
+#define RFID_CMD_Sleep               ((byte)0x96)
+
 const int led = 13;
-const int rfidReset = 4;
 
 const byte zero = 0;
 const byte nonzero = 1;
+
+
+class RfidResponse {
+public:
+  RfidResponse(SoftwareSerial* port);
+  virtual ~RfidResponse(void);
+
+  virtual int poll(void);   // Returns !=0 when complete response ready.  <0 => error, >0 is length
+  virtual byte* data(void); // Returns pointer to buffer
+  virtual void reset(void); // Resets buffer state
+
+private:
+  SoftwareSerial* m_port;
+  int m_index;
+  int m_count;
+  byte m_buf[32];
+};
+
+RfidResponse::RfidResponse(SoftwareSerial* port)
+{
+  m_port = port;
+  reset();
+}
+
+RfidResponse::~RfidResponse()
+{
+}
+
+int RfidResponse::poll()
+{
+  int ret = 0;
+  int i;
+  byte recSum = 0;
+  byte data;
+
+  if (m_port->available()) {
+    data = m_port->read();
+    if ((0 == m_index) && (RFID_CMD_Header0 != data)) ret = -1;
+    if ((1 == m_index) && (RFID_CMD_Header1 != data)) ret = -2;
+    if (2 == m_index) {
+      if (data > 27) ret = -3;
+        else m_count = data;
+    }
+    if (ret < 0) {
+      reset();
+      return ret;
+    }
+    m_buf[m_index++] = data;
+    if ((4+m_count) == m_index) {
+      for (i=2; i<(m_count+3); i++) recSum+= m_buf[i];
+      ret = 4 + m_count; // Assume checksum OK
+      if (recSum != data) ret = -ret; // Bad checksum
+      reset();
+    }
+  }
+  return ret;
+}
+
+byte* RfidResponse::data()
+{
+  return m_buf;
+}
+
+void RfidResponse::reset()
+{
+  m_index = m_count = 0;
+}
+
+RfidResponse response(&rfid0);
 
 /* SM130 UART frames:
   Writing:
@@ -68,7 +138,7 @@ void showReply(int len, const byte* response)
   int i;
 
   Serial.print("Cmd response is ");
-  if (len < 10) Serial.print(' ');
+  if ((len > -10) && (len < 10)) Serial.print(' ');
   Serial.print(len);
   Serial.print(" bytes: ");
   if (len < 0) len = -len;
@@ -90,102 +160,60 @@ void writeCmd(int count, byte cmd, const byte* data = 0)
   byte csum = count + 1 + cmd;
   int i;
   
-  rfid.write((uint8_t) CMD_Header0);
-  rfid.write((uint8_t) CMD_Header1);
-  rfid.write((uint8_t) count+1);
-  rfid.write((uint8_t) cmd);
+  rfid0.write((uint8_t) RFID_CMD_Header0);
+  rfid0.write((uint8_t) RFID_CMD_Header1);
+  rfid0.write((uint8_t) count+1);
+  rfid0.write((uint8_t) cmd);
   for (i=0; i<count; i++) {
     csum += data[i];
-    rfid.write((uint8_t) data[i]);
+    rfid0.write((uint8_t) data[i]);
   }
-  rfid.write((uint8_t) csum);
-}
-
-void blinky(int mask)
-{
-  static int count = 0;
-  count++;
-  digitalWrite(led, ((count & mask)?LOW:HIGH));
-}
-
-int readReply(byte* buf)
-{
-  int count;
-  int i;
-  int len;
-  byte input;
-  byte inSum;
-  byte recSum = 0;
-  
-  for (i=0; i<32; i++) buf[i] = 0x42;
-  
-  while (!rfid.available()) blinky(7<<12);
-  buf[0] = input = rfid.read();
-  if (CMD_Header0 != input) return -1;
-  while (!rfid.available()) blinky(3<<13);
-  buf[1] = input = rfid.read();
-  if (CMD_Header1 != input) return -2;
-  while (!rfid.available()); blinky(1<<14);
-  buf[2] = count = rfid.read();
-  if (count > 20) return -3;
-  while (!rfid.available()) blinky(7<<14);
-  buf[3] = rfid.read(); // CMD
-  for (i=1; i<count; i++) {
-    while (!rfid.available()) blinky(3<<14);
-    buf[i+3] = rfid.read(); // Data
-  }
-  while (!rfid.available()) blinky(1<<14);
-  buf[3+count] = inSum = rfid.read(); // Checksum
-
-  for (i=2; i<(count+3); i++) recSum+= buf[i];
-  len = 4+count;
-  if (recSum != inSum) len = -len;
-  return len;
+  rfid0.write((uint8_t) csum);
 }
 
 
 //INIT
 void setup()  
 {
-  byte response[32];
   int len;
 
   delay(200);
 
   pinMode(led, OUTPUT);     
-  pinMode(rfidReset, OUTPUT);     
+  pinMode(RFIDRESET, OUTPUT);     
 
   Serial.begin(9600);
   
   // set the data rate for the NewSoftSerial port
-  rfid.begin(19200);
+  rfid0.begin(19200);
 
-  digitalWrite(rfidReset, HIGH);
+  digitalWrite(RFIDRESET, HIGH);
   delay(50);
-  digitalWrite(rfidReset, LOW);
+  digitalWrite(RFIDRESET, LOW);
   delay(50);
   Serial.println("Start");
-  writeCmd(0, CMD_Firmware);
-  len = readReply(response);
-  showReply(len, response);
+  writeCmd(0, RFID_CMD_Firmware);
+  while (0 == (len = response.poll()));
+  showReply(len, response.data());
 
-  writeCmd(1, CMD_Antenna_Power, &nonzero);
-  len = readReply(response);
-  showReply(len, response);
-  writeCmd(0, CMD_Seek_for_Tag);
-  len = readReply(response);
-  showReply(len, response);
+  writeCmd(1, RFID_CMD_Antenna_Power, &nonzero);
+  while (0 == (len = response.poll()));
+  showReply(len, response.data());
+  writeCmd(0, RFID_CMD_Seek_for_Tag);
+  while (0 == (len = response.poll()));
+  showReply(len, response.data());
 }
 
 void loop()
 {
   int len;
   int i;
-  byte response[32];
 
-  writeCmd(0, CMD_Seek_for_Tag);
-  len = readReply(response);
-  showReply(len, response);
-  len = readReply(response);
-  showReply(len, response);
+  if (Serial.available()) {
+    Serial.read();
+    writeCmd(0, RFID_CMD_Seek_for_Tag);
+  }
+  if (len = response.poll()) {
+    showReply(len, response.data());
+  }
 }
