@@ -1,12 +1,20 @@
 /*
-  RFID Eval 13.56MHz Shield example sketch with Value Block Read/Writev10
-  
-  works with 13.56MHz MiFare 1k tags
-  
-  Based on hardware v13:
-  D7 -> RFID RX
-  D8 -> RFID TX
-  
+  This is a test of my non-blocking Serial buffering scheme.
+
+  It requires a Mega (or other board with 3 UARTs in addition to the USB port).
+  The UARTs need to be jumpered together as follows:
+    TX1->RX2  (pin 18 -> pin 17)
+    TX2->RX3  (pin 16 -> pin 15)
+    TX3->RX1  (pin 14 -> pin 19)
+
+  The setup() function sends a few messages around this path to check it.
+
+  The loop() function looks for a message on the USB console, and then uses the
+  low bits of the first byte to switch between 4 different messages that it
+  writes to one of the UARTs.  It also looks for complete replies (complete in
+  the symantics of an RFID reader) to come back from each of the UARTs and
+  reports them when it sees them.
+
   Note: RFID Reset attached to D4
 */
 #include <SoftwareSerial.h>
@@ -19,10 +27,12 @@ const int RFIDRESET = 4;
 #if 0
 const int RFID0_RX = 7;
 const int RFID0_TX = 8;
-SoftwareSerial rfid0(RFID0_RX, RFID0_TX);
+SoftwareSerial rfid1(RFID0_RX, RFID0_TX);
 typedef SoftwareSerial SerialPort;
 #else
-#define rfid0 Serial1
+#define rfid1 Serial1
+#define rfid2 Serial2
+#define rfid3 Serial3
 typedef HardwareSerial SerialPort;
 #endif
 
@@ -179,7 +189,9 @@ void RfidResponse::reset()
   m_index = m_count = 0;
 }
 
-RfidResponse response(&rfid0);
+RfidResponse s1Buff(&rfid1);
+RfidResponse s2Buff(&rfid2);
+RfidResponse s3Buff(&rfid3);
 
 /* SM130 UART frames:
   Writing:
@@ -199,11 +211,17 @@ RfidResponse response(&rfid0);
   1 byte - checksum - sum of everything but the header
 */
 
-void showReply(int len, const byte* response)
+void showReply(int port, int len, const byte* response)
 {
   int i;
 
-  Serial.print("Cmd response is ");
+  if (0 == port) {
+    Serial.print("CMD is ");
+  } else {
+    Serial.print("RR#");
+    Serial.print(port);
+    Serial.print(" replies with ");
+  }
   if ((len > -10) && (len < 10)) Serial.print(' ');
   Serial.print(len);
   Serial.print(" bytes: ");
@@ -218,23 +236,40 @@ void showReply(int len, const byte* response)
 }
 
 //  writeCmd -- write a command, including the header prefix and the checksum
+//       rfid:  pointer to a serial port object
 //       count: # of bytes in data (may be 0)
 //       cmd:   command
 //       data:  bytes to send after command, if count > 0
-void writeCmd(int count, byte cmd, const byte* data = 0)
+void writeCmd(SerialPort* rfid, int count, byte cmd, const byte* data = 0)
 {
   byte csum = count + 1 + cmd;
   int i;
   
-  rfid0.write((uint8_t) RFID_CMD_Header0);
-  rfid0.write((uint8_t) RFID_CMD_Header1);
-  rfid0.write((uint8_t) count+1);
-  rfid0.write((uint8_t) cmd);
+  rfid->write((uint8_t) RFID_CMD_Header0);
+  rfid->write((uint8_t) RFID_CMD_Header1);
+  rfid->write((uint8_t) count+1);
+  rfid->write((uint8_t) cmd);
   for (i=0; i<count; i++) {
     csum += data[i];
-    rfid0.write((uint8_t) data[i]);
+    rfid->write((uint8_t) data[i]);
   }
-  rfid0.write((uint8_t) csum);
+  rfid->write((uint8_t) csum);
+}
+
+void roundRobin(int count, byte cmd, const byte* payload = 0)
+{
+  int len;
+  byte* data = 0;
+
+  writeCmd(&rfid1, count, cmd, payload);
+  writeCmd(&rfid2, count, cmd+1, payload);
+  writeCmd(&rfid3, count, cmd+2, payload);
+  while (0 == (len = s1Buff.poll()));
+  showReply(1, len, data = s1Buff.data());
+  while (0 == (len = s2Buff.poll()));
+  showReply(2, len, s2Buff.data());
+  while (0 == (len = s3Buff.poll()));
+  showReply(3, len, s3Buff.data());
 }
 
 
@@ -242,6 +277,7 @@ void writeCmd(int count, byte cmd, const byte* data = 0)
 void setup()  
 {
   int len;
+  byte data;
 
   delay(200);
 
@@ -251,35 +287,51 @@ void setup()
   Serial.begin(9600);
   
   // set the data rate for the NewSoftSerial port
-  rfid0.begin(19200);
+  rfid1.begin(19200);
+  rfid2.begin(19200);
+  rfid3.begin(19200);
 
   digitalWrite(RFIDRESET, HIGH);
   delay(50);
   digitalWrite(RFIDRESET, LOW);
   delay(50);
   Serial.println("Start");
-  writeCmd(0, RFID_CMD_Firmware);
-  while (0 == (len = response.poll()));
-  showReply(len, response.data());
-
-  writeCmd(1, RFID_CMD_Antenna_Power, &nonzero);
-  while (0 == (len = response.poll()));
-  showReply(len, response.data());
-  writeCmd(0, RFID_CMD_Seek_for_Tag);
-  while (0 == (len = response.poll()));
-  showReply(len, response.data());
+  roundRobin(0, RFID_CMD_Firmware);
+  roundRobin(1, RFID_CMD_Antenna_Power, &nonzero);
+  roundRobin(0, RFID_CMD_Seek_for_Tag);
 }
 
 void loop()
 {
   int len;
-  int i;
+  byte* data;
 
   if (len = cmdPort.poll()) {
-    showReply(len, cmdPort.data());
-    writeCmd(0, RFID_CMD_Seek_for_Tag);
+    showReply(0, len, data = cmdPort.data());
+    switch(3 & (*data)) {
+    case 0:
+      writeCmd(&rfid3, 1,  RFID_CMD_Set_Baud_Rate, &nonzero);
+      break;
+    case 1:
+      writeCmd(&rfid1, 0, RFID_CMD_Seek_for_Tag);
+      break;
+    case 2:
+      writeCmd(&rfid2, 1, RFID_CMD_Antenna_Power, &nonzero);
+      break;
+    case 3:
+      writeCmd(&rfid3, 1, RFID_CMD_Antenna_Power, &zero);
+      break;
+    }
   }
-  if (len = response.poll()) {
-    showReply(len, response.data());
+  if (len = s1Buff.poll()) {
+    showReply(1, len, data = s1Buff.data());
+    // writeCmd(&rfid3, len-3, data[3], data+4);
+  }
+  if (len = s2Buff.poll()) {
+    showReply(2, len, s2Buff.data());
+  }
+  if (len = s3Buff.poll()) {
+    // writeCmd(&rfid2, len-3, data[3], data+4);
+    showReply(3, len, s3Buff.data());
   }
 }
