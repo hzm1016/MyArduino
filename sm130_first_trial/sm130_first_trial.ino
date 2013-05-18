@@ -14,10 +14,17 @@
 const int FALSE = 0;
 const int  TRUE = 1;
 
+const int RFIDRESET = 4;
+
+#if 0
 const int RFID0_RX = 7;
 const int RFID0_TX = 8;
-const int RFIDRESET = 4;
 SoftwareSerial rfid0(RFID0_RX, RFID0_TX);
+typedef SoftwareSerial SerialPort;
+#else
+#define rfid0 Serial1
+typedef HardwareSerial SerialPort;
+#endif
 
 #define RFID_CMD_Header0             ((byte)0xff)
 #define RFID_CMD_Header1             ((byte)0x00)
@@ -107,7 +114,7 @@ UsbInput cmdPort;
 
 class RfidResponse {
 public:
-  RfidResponse(SoftwareSerial* port);
+  RfidResponse(SerialPort* port);
   virtual ~RfidResponse(void);
 
   virtual int poll(void);   // Returns !=0 when complete response ready.  <0 => error, >0 is length
@@ -116,13 +123,13 @@ public:
 
 private:
   static const int RFID_BUF_LEN = 32;
-  SoftwareSerial* m_port;
+  SerialPort* m_port;
   int m_index;
   int m_count;
   byte m_buf[RFID_BUF_LEN];
 };
 
-RfidResponse::RfidResponse(SoftwareSerial* port)
+RfidResponse::RfidResponse(SerialPort* port)
 {
   m_port = port;
   reset();
