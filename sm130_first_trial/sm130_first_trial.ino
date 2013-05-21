@@ -10,14 +10,16 @@
   The setup() function sends a few messages around this path to check it.
 
   The loop() function looks for a message on the USB console, and then uses the
-  low bits of the first byte to switch between 4 different messages that it
+  low bits of the first byte to switch between 8 different messages that it
   writes to one of the UARTs.  It also looks for complete replies (complete in
   the symantics of an RFID reader) to come back from each of the UARTs and
   reports them when it sees them.
 
   Note: RFID Reset attached to D4
 */
+#if 0
 #include <SoftwareSerial.h>
+#endif
 
 const int FALSE = 0;
 const int  TRUE = 1;
@@ -308,7 +310,7 @@ void loop()
 
   if (len = cmdPort.poll()) {
     showReply(0, len, data = cmdPort.data());
-    switch(3 & (*data)) {
+    switch(7 & (*data)) {
     case 0:
       writeCmd(&rfid3, 1,  RFID_CMD_Set_Baud_Rate, &nonzero);
       break;
@@ -320,6 +322,15 @@ void loop()
       break;
     case 3:
       writeCmd(&rfid3, 1, RFID_CMD_Antenna_Power, &zero);
+      break;
+    case 4:
+      writeCmd(&rfid1, 1, RFID_CMD_Antenna_Power, &nonzero);
+      break;
+    case 5:
+      break;
+    case 6:
+      break;
+    case 7:
       break;
     }
   }
