@@ -1,7 +1,27 @@
 #ifndef RFID_H
 #define RFID_H
 /*
+ *  Definitions for the SM130 RFID reader hardware interface
+ */
+
+/* SM130 UART frames:
+  Writing:
+  1 byte - header - always 0xff
+  1 byte - reserved - always 0x00
+  1 byte - length - of command and data bytes ("N+1")
+  1 byte - command
+  N bytes - data
+  1 byte - checksum - sum of everything but the header (count, cmd, data)
+  
+  Reading:
+  1 byte - header - always 0xff
+  1 byte - reserved - always 0x00
+  1 byte - length - of command and data bytes ("N+1")
+  1 byte - command that SM130 is responding to
+  N bytes - data - results, or error code
+  1 byte - checksum - sum of everything but the header (count, cmd, data)
 */
+
 
 const int RFIDRESET = 4;
 

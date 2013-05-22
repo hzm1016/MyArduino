@@ -49,6 +49,9 @@ looks for a message on the USB console, and then uses the
 
   Note: RFID Reset attached to D4
 */
+
+#define DEBUG
+
 #include <Arduino.h>
 #include <SoftwareSerial.h>
 #include "rfid.h"
@@ -69,68 +72,6 @@ RfidInput s1Buff(&rfid1);
 RfidInput s2Buff(&rfid2);
 RfidInput s3Buff(&rfid3);
 
-void showReply(int port, int len, const byte* response)
-{
-  int i;
-
-  if (0 == port) {
-    Serial.print("CMD is ");
-  } else {
-    Serial.print("RR#");
-    Serial.print(port);
-    Serial.print(" replies with ");
-  }
-  if ((len > -10) && (len < 10)) Serial.print(' ');
-  Serial.print(len);
-  Serial.print(" bytes: ");
-  if (len < 0) len = -len;
-  for (i=0; i<len; i++) {
-    if ((len-1) == i) Serial.print(" * "); // Checksum
-      else Serial.print(' ');
-    if (16 > response[i]) Serial.print(0, HEX);
-    Serial.print(response[i], HEX);
-  }
-  Serial.println();
-}
-
-//  writeCmd -- write a command, including the header prefix and the checksum
-//       rfid:  pointer to a serial port object
-//       count: # of bytes in data (may be 0)
-//       cmd:   command
-//       data:  bytes to send after command, if count > 0
-void writeCmd(SerialPort* rfid, int count, byte cmd, const byte* data = 0)
-{
-  byte csum = count + 1 + cmd;
-  int i;
-  
-  rfid->write((uint8_t) RFID_CMD_Header0);
-  rfid->write((uint8_t) RFID_CMD_Header1);
-  rfid->write((uint8_t) count+1);
-  rfid->write((uint8_t) cmd);
-  for (i=0; i<count; i++) {
-    csum += data[i];
-    rfid->write((uint8_t) data[i]);
-  }
-  rfid->write((uint8_t) csum);
-}
-
-void roundRobin(int count, byte cmd, const byte* payload = 0)
-{
-  int len;
-  byte* data = 0;
-
-  writeCmd(&rfid1, count, cmd, payload);
-  writeCmd(&rfid2, count, cmd+1, payload);
-  writeCmd(&rfid3, count, cmd+2, payload);
-  while (0 == (len = s1Buff.poll()));
-  showReply(1, len, data = s1Buff.data());
-  while (0 == (len = s2Buff.poll()));
-  showReply(2, len, s2Buff.data());
-  while (0 == (len = s3Buff.poll()));
-  showReply(3, len, s3Buff.data());
-}
-
-
 //INIT
 void setup()  
 {
@@ -143,20 +84,17 @@ void setup()
   pinMode(RFIDRESET, OUTPUT);     
 
   Serial.begin(9600);
-  
-  // set the data rate for the NewSoftSerial port
-  rfid1.begin(19200);
-  rfid2.begin(19200);
-  rfid3.begin(19200);
-
   digitalWrite(RFIDRESET, HIGH);
   delay(50);
   digitalWrite(RFIDRESET, LOW);
   delay(50);
   Serial.println("Start");
-  roundRobin(0, RFID_CMD_Firmware);
-  roundRobin(1, RFID_CMD_Antenna_Power, &nonzero);
-  roundRobin(0, RFID_CMD_Seek_for_Tag);
+  
+  // initialize the RFID UARTs (set the data rate for the ports)
+  s1Buff.init();
+  s2Buff.init();
+  s3Buff.init();
+
 }
 
 void loop()
@@ -164,23 +102,25 @@ void loop()
   int len;
   byte* data;
 
+  // Serial.print('.');
   if (len = cmdPort.poll()) {
-    showReply(0, len, data = cmdPort.data());
+    data = cmdPort.data();
+    cmdPort.showReply(len);
     switch(7 & (*data)) {
     case 0:
-      writeCmd(&rfid3, 1,  RFID_CMD_Set_Baud_Rate, &nonzero);
+      s3Buff.writeCmd(1,  RFID_CMD_Set_Baud_Rate, &nonzero);
       break;
     case 1:
-      writeCmd(&rfid1, 0, RFID_CMD_Seek_for_Tag);
+      s1Buff.writeCmd(0, RFID_CMD_Seek_for_Tag);
       break;
     case 2:
-      writeCmd(&rfid2, 1, RFID_CMD_Antenna_Power, &nonzero);
+      s2Buff.writeCmd(1, RFID_CMD_Antenna_Power, &nonzero);
       break;
     case 3:
-      writeCmd(&rfid3, 1, RFID_CMD_Antenna_Power, &zero);
+      s3Buff.writeCmd(1, RFID_CMD_Antenna_Power, &zero);
       break;
     case 4:
-      writeCmd(&rfid1, 1, RFID_CMD_Antenna_Power, &nonzero);
+      s1Buff.writeCmd(1, RFID_CMD_Antenna_Power, &nonzero);
       break;
     case 5:
       break;
@@ -191,14 +131,12 @@ void loop()
     }
   }
   if (len = s1Buff.poll()) {
-    showReply(1, len, data = s1Buff.data());
-    // writeCmd(&rfid3, len-3, data[3], data+4);
+    s1Buff.showReply(len);
   }
   if (len = s2Buff.poll()) {
-    showReply(2, len, s2Buff.data());
+    s2Buff.showReply(len);
   }
   if (len = s3Buff.poll()) {
-    // writeCmd(&rfid2, len-3, data[3], data+4);
-    showReply(3, len, s3Buff.data());
+    s3Buff.showReply(len);
   }
 }

@@ -13,6 +13,8 @@ public:
   virtual bool available(void);
   virtual int read(void);
   SerialPort* getPort(void);
+  int getPortNum(void);
+  void showReply(int len);
   // virtual int recvData(byte input);  // Adds input to buffer
 
 protected:
@@ -24,6 +26,8 @@ protected:
 
 private:
   SerialPort* m_port;
+  int m_portNum;
+  static int sm_portcount;
 };
 
 
@@ -49,10 +53,13 @@ public:
 
   virtual int poll(void);   // Returns !=0 when complete response ready.  <0 => error, >0 is length
   virtual void reset(void); // Resets buffer state
+  virtual void writeCmd(int count, byte cmd, const byte* data = 0);
+  virtual void init(void);
 
 private:
   int m_count;
   static const int RFID_BUF_LEN = 32;
+  static const int RFID_BAUD_RATE = 19200;
   byte m_buffer[RFID_BUF_LEN];
 };
 
