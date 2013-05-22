@@ -2,16 +2,18 @@
 #include "rfid.h"
 #include "nonblockinput.h"
 
-NonBlockInput::NonBlockInput(SerialPort* port)
+NonBlockInput::NonBlockInput(SerialPort* port, byte* buffer, int buflen) :
+   m_index(0),
+   m_buf(buffer),
+   m_buflen(buflen),
+   m_port(port)
 {
-  m_port = port;
   reset();
 }
 
 NonBlockInput::~NonBlockInput()
 {
 }
-
 
 byte* NonBlockInput::data()
 {
@@ -23,7 +25,24 @@ void NonBlockInput::reset()
   m_index = 0;
 }
 
-UsbInput::UsbInput(SerialPort* port) : NonBlockInput(port)
+bool NonBlockInput::available()
+{
+  return m_port->available();
+}
+
+int NonBlockInput::read()
+{
+  return m_port->read();
+}
+
+SerialPort* NonBlockInput::getPort()
+{
+  return m_port;
+}
+
+
+UsbInput::UsbInput(SerialPort* port) :
+   NonBlockInput(port, m_buffer, USB_BUF_LEN)
 {
 }
 
@@ -37,11 +56,11 @@ int UsbInput::poll()
   int i;
   byte data;
 
-  if (Serial.available()) {
-    data = Serial.read();
+  if (available()) {
+    data = read();
     m_buf[m_index++] = data;
-    if (BUF_LEN == m_index) ret = -m_index;
-    if (('\n' == data) || ('\r' == data)) {
+    if (USB_BUF_LEN == m_index) ret = -m_index;
+    if (('\n' == data) || ('\r' == data) || ('\000' == data)) {
       ret = m_index;
     }
     if (ret) {
@@ -53,9 +72,10 @@ int UsbInput::poll()
 }
 
 
-RfidInput::RfidInput(SerialPort* port) : NonBlockInput(port)
+RfidInput::RfidInput(SerialPort* port) :
+   NonBlockInput(port, m_buffer, RFID_BUF_LEN),
+   m_count(0)
 {
-  m_port = port;
   reset();
 }
 
@@ -70,12 +90,12 @@ int RfidInput::poll()
   byte recSum = 0;
   byte data;
 
-  if (m_port->available()) {
-    data = m_port->read();
+  if (available()) {
+    data = read();
     if ((0 == m_index) && (RFID_CMD_Header0 != data)) ret = -1;
     if ((1 == m_index) && (RFID_CMD_Header1 != data)) ret = -2;
     if (2 == m_index) {
-      if (data > (BUF_LEN-5)) ret = -3;
+      if (data > (RFID_BUF_LEN-5)) ret = -3;
         else m_count = data;
     }
     if (ret < 0) {
