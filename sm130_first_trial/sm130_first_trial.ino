@@ -18,7 +18,8 @@
   Note: RFID Reset attached to D4
 */
 #if 0
-#include <SoftwareSerial.h>
+// #include <SoftwareSerial.h>
+#else
 #endif
 
 const int FALSE = 0;
@@ -27,10 +28,16 @@ const int  TRUE = 1;
 const int RFIDRESET = 4;
 
 #if 0
-const int RFID0_RX = 7;
-const int RFID0_TX = 8;
-SoftwareSerial rfid1(RFID0_RX, RFID0_TX);
+const int RFID1_RX = 7;
+const int RFID1_TX = 8;
+const int RFID2_RX = 10;
+const int RFID2_TX = 11;
+const int RFID3_RX = 12;
+const int RFID3_TX = 13;
 typedef SoftwareSerial SerialPort;
+SerialPort rfid1(RFID1_RX, RFID1_TX);
+SerialPort rfid2(RFID2_RX, RFID2_TX);
+SerialPort rfid3(RFID3_RX, RFID3_TX);
 #else
 #define rfid1 Serial1
 #define rfid2 Serial2
@@ -288,8 +295,12 @@ void setup()
 
   Serial.begin(9600);
   
-  // set the data rate for the NewSoftSerial port
-  rfid1.begin(19200);
+  // set the data rate for the RFID port(s)
+  // rfid1.begin(9600);
+  // rfid1.begin(19200);
+  // rfid1.begin(38400);
+  // rfid1.begin(57600);
+  // rfid1.begin(115200);
   rfid2.begin(19200);
   rfid3.begin(19200);
 
@@ -298,39 +309,58 @@ void setup()
   digitalWrite(RFIDRESET, LOW);
   delay(50);
   Serial.println("Start");
-  roundRobin(0, RFID_CMD_Firmware);
-  roundRobin(1, RFID_CMD_Antenna_Power, &nonzero);
-  roundRobin(0, RFID_CMD_Seek_for_Tag);
+  // roundRobin(0, RFID_CMD_Firmware);
+  // roundRobin(1, RFID_CMD_Antenna_Power, &nonzero);
+  // roundRobin(0, RFID_CMD_Seek_for_Tag);
 }
+
+static long rates[] = {300, 600, 1200, 2400, 4800, 9600, 14400, 19200, 28800, 38400, 57600, 115200, 0};
+static int curRate = 0;
 
 void loop()
 {
   int len;
   byte* data;
+  byte one = 1;
 
   if (len = cmdPort.poll()) {
     showReply(0, len, data = cmdPort.data());
     switch(7 & (*data)) {
     case 0:
-      writeCmd(&rfid3, 1,  RFID_CMD_Set_Baud_Rate, &nonzero);
+      // writeCmd(&rfid1, 1,  RFID_CMD_Set_Baud_Rate, &one);
       break;
     case 1:
-      writeCmd(&rfid1, 0, RFID_CMD_Seek_for_Tag);
+      // writeCmd(&rfid2, 0, RFID_CMD_Seek_for_Tag);
       break;
     case 2:
       writeCmd(&rfid2, 1, RFID_CMD_Antenna_Power, &nonzero);
       break;
     case 3:
-      writeCmd(&rfid3, 1, RFID_CMD_Antenna_Power, &zero);
+      writeCmd(&rfid2, 1, RFID_CMD_Antenna_Power, &zero);
       break;
     case 4:
       writeCmd(&rfid1, 1, RFID_CMD_Antenna_Power, &nonzero);
       break;
     case 5:
+      writeCmd(&rfid1, 0, RFID_CMD_Reset);
       break;
     case 6:
+      writeCmd(&rfid1, 0, RFID_CMD_Firmware);
       break;
     case 7:
+      rfid1.end();
+      rfid1.begin(rates[curRate]);
+      Serial.print("Setting RFID1 to ");
+      Serial.print(rates[curRate]);
+      Serial.println(" baud");
+      curRate++;
+      if (!rates[curRate]) curRate = 0;
+      delay(50);
+      digitalWrite(RFIDRESET, HIGH);
+      delay(50);
+      digitalWrite(RFIDRESET, LOW);
+      delay(50);
+      writeCmd(&rfid1, 0, RFID_CMD_Reset);
       break;
     }
   }
