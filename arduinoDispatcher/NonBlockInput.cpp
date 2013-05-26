@@ -1,18 +1,26 @@
+const int FALSE = 0;
+const int  TRUE = 1;
+
 #include "Arduino.h"
 #include "rfid.h"
-#include "nonblockinput.h"
+#include "NonBlockInput.h"
 
 #define DEBUG
 
 int NonBlockInput::sm_portcount = 0;
 
-NonBlockInput::NonBlockInput(SerialPort* port, byte* buffer, int buflen) :
+NonBlockInput::NonBlockInput(SerialPort* port, byte* buffer, int buflen, int dev, bool sendHex) :
    m_index(0),
    m_buf(buffer),
    m_buflen(buflen),
-   m_port(port)
+   m_port(port),
+   m_sendHex(sendHex)
 {
-  m_portNum = sm_portcount++;
+  if (-1 != dev) {
+    m_portNum = dev;
+  } else {
+    m_portNum = sm_portcount++;
+  }
   reset();
 }
 
@@ -50,6 +58,48 @@ int NonBlockInput::getPortNum()
   return m_portNum;
 }
 
+char* NonBlockInput::tohex(byte val, char* dest)
+{
+  static const char* h = "0123456789ABCDEF";
+  *dest++ = h[((val&0xf0)>>4)];
+  *dest++ = h[(val&0x0f)];
+  *dest++ = ' ';
+  return dest;
+}
+
+int NonBlockInput::encode(const char* dev, int sub, const byte* data, int len, char* dest)
+{
+  int i = 0;
+  int n;
+  byte cs = 0;
+  char* start = dest;
+  
+  *dest++ = *dev++;
+  *dest++ = *dev++;
+  *dest++ = ' ';
+  *dest++ = sub + '0';
+  *dest++ = ' ';
+  if (m_sendHex) {
+    dest += sprintf(dest, "%d ", -len);
+    for (i=0; i<len; i++) {
+      dest = tohex(data[i], dest);
+    }
+  } else {
+    len--; // do not include terminating NUL character
+    dest += sprintf(dest, "%d ", len);
+    for (i=0; i<len; i++) {
+      *dest++ = data[i];
+    }
+    *dest++ = ' ';
+  }
+  n = dest - start;
+  for (i=0; i<n; i++) {
+    cs += start[i];
+  }
+  dest = tohex(0-cs, dest);
+  *dest++ = '\0';
+  return dest-start;
+}
 
 void NonBlockInput::showReply(int len)
 {
@@ -79,7 +129,7 @@ void NonBlockInput::showReply(int len)
 
 
 UsbInput::UsbInput(SerialPort* port) :
-   NonBlockInput(port, m_buffer, USB_BUF_LEN)
+   NonBlockInput(port, m_buffer, USB_BUF_LEN) // , 0, FALSE)
 {
 }
 
@@ -109,8 +159,8 @@ int UsbInput::poll()
 }
 
 
-RfidInput::RfidInput(SerialPort* port) :
-   NonBlockInput(port, m_buffer, RFID_BUF_LEN),
+RfidInput::RfidInput(SerialPort* port, int dev) :
+   NonBlockInput(port, m_buffer, RFID_BUF_LEN, dev, TRUE),
    m_count(0)
 {
   reset();
