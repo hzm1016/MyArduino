@@ -57,6 +57,21 @@ const int  TRUE = 1;
 #include "NonBlockInput.h"
 
 const int led = 13;
+int ledState = 0;
+
+int ledGet() {return ledState;}
+
+int ledSet(int val)
+{
+  if (val) {
+    digitalWrite(led, HIGH);   // turn the LED on (HIGH is the voltage level)
+    ledState = 1;
+  } else {
+    digitalWrite(led, LOW);   // turn the LED offn (LOW is the voltage level)
+    ledState = 0;
+  }
+  return ledState;
+}
 
 const byte zero = 0;
 const byte nonzero = 1;
@@ -64,6 +79,7 @@ const byte nonzero = 1;
 
 UsbInput cmdPort(&Serial);
 
+RfidInput* snBufs[3];
 RfidInput* s1Buff = NULL;
 RfidInput* s2Buff = NULL;
 RfidInput* s3Buff = NULL;
@@ -90,43 +106,54 @@ void setup()
   s1Buff = new RfidInput(&rfid1, 1);
   s2Buff = new RfidInput(&rfid2, 2);
   // s3Buff = new RfidInput(&rfid3, 3);
+  snBufs[0] = s1Buff;
+  snBufs[1] = s2Buff;
+  snBufs[2] = s3Buff;
   if (s1Buff) s1Buff->init();
   if (s2Buff) s2Buff->init();
   if (s3Buff) s3Buff->init();
 
 }
 
+char buf[128];
+
 // Test code...
-int tickleRRs(byte cmd)
+int dispatch(char* cmd)
 {
-  switch(7 & cmd) {
-  case 0:
+  char dev[3];
+  int sub;
+  int len;
+
+  len = cmdPort.decode(cmd, dev, &sub, (byte*) buf);
+  if (len < 0) {
+    Serial.print("decode returned ");
+    Serial.println(len);
+  } else
+  switch (*dev) {
+  case 'l':
+  case 'L':
+    switch (*buf) {
+    case 'o':
+      ledSet(0);
+      break;
+    case 'O':
+      ledSet(1);
+      break;
+    case 't':
+    case 'T':
+      ledSet(ledGet()?0:1);
+      break;
+    }
     break;
-  case 1:
-    s1Buff->writeCmd(0, RFID_CMD_Seek_for_Tag);
-    break;
-  case 2:
-    s2Buff->writeCmd(1, RFID_CMD_Antenna_Power, &nonzero);
-    break;
-  case 3:
-    s1Buff->writeCmd(1, RFID_CMD_Antenna_Power, &zero);
-    s2Buff->writeCmd(1, RFID_CMD_Antenna_Power, &zero);
-    break;
-  case 4:
-    s1Buff->writeCmd(1, RFID_CMD_Antenna_Power, &nonzero);
-    break;
-  case 5:
-    s2Buff->writeCmd(0, RFID_CMD_Seek_for_Tag);
-    break;
-  case 6:
-    s2Buff->writeCmd(1, RFID_CMD_Antenna_Power, &nonzero);
-    break;
-  case 7:
+  case 'r':
+  case 'R':
+    if (snBufs[sub]) {
+      snBufs[sub]->writeCmd(buf[0]-1, buf[1], (byte*) (buf+2));
+    }
     break;
   }
+  return len;
 }
-
-char buf[128];
 
 int doPoll(class NonBlockInput* sp)
 {
@@ -151,7 +178,7 @@ void loop()
     cmdPort.showReply(len);
     cmdPort.encode("CM", 0, cmdPort.data(), len, buf);
     Serial.println(buf);
-    tickleRRs(*data);
+    dispatch((char*)data);
   }
   doPoll(s1Buff);
   doPoll(s2Buff);

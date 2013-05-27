@@ -1,6 +1,7 @@
 #ifndef NONBLOCKINPUT_H
 #define NONBLOCKINPUT_H
 
+
 class NonBlockInput
 {
 public:
@@ -15,9 +16,9 @@ public:
   SerialPort* getPort(void);
   int getPortNum(void);
   void showReply(int len);
-  // virtual int recvData(byte input);  // Adds input to buffer
-  virtual int encode(const char* dev, int sub, const byte* data, int len, char* dest);
-  virtual char* tohex(byte val, char* dest);
+  int encode(const char* dev, int sub, const byte* data, int len, char* dest);
+  int doDecode(char * src, char* dev, int* sub, byte* dest);
+  int decode(char * src, char* dev, int* sub, byte* dest);
 
 protected:
 

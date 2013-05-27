@@ -58,7 +58,7 @@ int NonBlockInput::getPortNum()
   return m_portNum;
 }
 
-char* NonBlockInput::tohex(byte val, char* dest)
+char* tohex(byte val, char* dest)
 {
   static const char* h = "0123456789ABCDEF";
   *dest++ = h[((val&0xf0)>>4)];
@@ -99,6 +99,98 @@ int NonBlockInput::encode(const char* dev, int sub, const byte* data, int len, c
   dest = tohex(0-cs, dest);
   *dest++ = '\0';
   return dest-start;
+}
+
+int fromhex(char* src)
+{
+  int ret = -1;
+  char c;
+
+  c = *src++;
+  if (('0' <= c) && ('9' >= c)) {
+    ret = (c - '0') << 4;
+  } else if (('a' <= c) && ('f' >= c)) {
+    ret = (c - 'a' + 10) << 4;
+  } else if (('A' <= c) && ('F' >= c)) {
+    ret = (c - 'A' + 10) << 4;
+  } else {
+    return -1;
+  }
+
+  c = *src++;
+  if (('0' <= c) && ('9' >= c)) {
+    ret += c - '0';
+  } else if (('a' <= c) && ('f' >= c)) {
+    ret += c - 'a' + 10;
+  } else if (('A' <= c) && ('F' >= c)) {
+    ret += c - 'A' + 10;
+  }
+  return ret;
+}
+
+int NonBlockInput::doDecode(char* src, char* dev, int* sub, byte* dest)
+{
+  int ret;
+  int count;
+  int len;
+  bool isHex; // HEX->Binary conversion
+  char* start = src;
+  byte cs = 0;
+  byte cs2;
+  int i;
+
+  *dev++ = *src++;
+  *dev++ = *src++;
+  *dev   = '\0';
+  if (' ' != *src++) return -1;
+  *sub = *src++ - '0';
+  if (' ' != *src++) return -2;
+  isHex = ('-' == *src);
+  if (isHex) src++;
+  len = atoi(src);
+  count = 1;
+  if (len > 9) count = 2;
+  if (len > 99) count = 3;
+  if (len > 999) count = 4;
+  src += count;
+  if (' ' != *src++) return -3;
+  if (isHex) {
+    count++; // allow for '-'
+    int b;
+    for (i=0; i<len; i++) {
+      if (-1 == (b = fromhex(src))) return -4;
+      *dest++ = b;
+      src+=2;
+      if (' ' != *src++) return -5;
+    }
+    ret = len;
+    count += 3+2+(3*len)+1;
+  } else {
+    for (i=0; i<len; i++) *dest++ = *src++;
+    if (' ' != *src++) return -7;
+    ret = len;
+    count += 3+2+1+len+1;
+  }
+  for (i=0; i<count; i++) cs += start[i];
+  cs2 = fromhex(src);
+  if (0 != (0xFF & (cs + cs2))) {
+    Serial.print("doDecode: ");
+    Serial.print(cs, HEX);
+    Serial.print(" + ");
+    Serial.print(cs2, HEX);
+    Serial.print(" = ");
+    Serial.println(cs+cs2, HEX);
+    return -8;
+  }
+  return ret;
+}
+
+int NonBlockInput::decode(char* src, char* dev, int* sub, byte* dest)
+{
+  int i = NonBlockInput::doDecode(src, dev, sub, dest);
+  Serial.print("decode: ret = ");
+  Serial.println(i);
+  return i;
 }
 
 void NonBlockInput::showReply(int len)
@@ -229,6 +321,17 @@ void RfidInput::writeCmd(int count, byte cmd, const byte* data)
   SerialPort* rfid = getPort();
   byte csum = count + 1 + cmd;
   int i;
+
+  Serial.print("writeCmd(");
+  Serial.print(count);
+  Serial.print(", ");
+  Serial.print(cmd, HEX);
+  Serial.print(", ");
+  for (i=0; i<count; i++) {
+    Serial.print(" ");
+    Serial.print(data[i], HEX);
+  }
+  Serial.println(")");
   
   rfid->write((uint8_t) RFID_CMD_Header0);
   rfid->write((uint8_t) RFID_CMD_Header1);
