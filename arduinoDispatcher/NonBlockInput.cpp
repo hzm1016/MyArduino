@@ -164,12 +164,12 @@ int NonBlockInput::doDecode(char* src, char* dev, int* sub, byte* dest)
       if (' ' != *src++) return -5;
     }
     ret = len;
-    count += 3+2+(3*len)+1;
+    count += 3+2+(3*len);
   } else {
     for (i=0; i<len; i++) *dest++ = *src++;
     if (' ' != *src++) return -7;
     ret = len;
-    count += 3+2+1+len+1;
+    count += 3+2+1+len;
   }
   for (i=0; i<count; i++) cs += start[i];
   cs2 = fromhex(src);
